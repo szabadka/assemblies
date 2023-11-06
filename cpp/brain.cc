@@ -60,11 +60,12 @@ std::vector<Synapse> GenerateSynapses(uint32_t support, float p, Trng& rng) {
     std::uniform_int_distribution<> u(0, support - 1);
     std::vector<uint8_t> selected(support);
     const uint32_t num_synapses = binom(rng);
+    synapses.resize(num_synapses, {0, 1.0f});
     for (uint32_t i = 0; i < num_synapses; ++i) {
       uint32_t to;
       while (selected[to = u(rng)]) {}
       selected[to] = 1;
-      synapses.push_back({to, 1.0f});
+      synapses[i].neuron = to;
     }
   }
   return synapses;
