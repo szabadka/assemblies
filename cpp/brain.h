@@ -40,7 +40,7 @@ class Brain {
   Brain(float p, float beta, uint32_t seed);
 
   Area& AddArea(const std::string& name, uint32_t n, uint32_t k,
-                bool recurrent = true);
+                bool recurrent = true, bool is_explicit = false);
   void AddStimulus(const std::string& name, uint32_t k);
   void AddFiber(const std::string& from, const std::string& to);
 
@@ -56,6 +56,7 @@ class Brain {
 
   void SimulateOneStep();
 
+  void SetLogLevel(int log_level) { log_level_ = log_level; }
   void LogGraphStats();
 
  private:
@@ -81,6 +82,7 @@ class Brain {
   std::vector<std::vector<uint32_t>> outgoing_fibers_;
   std::map<std::string, uint32_t> area_by_name_;
   std::vector<std::string> area_name_;
+  int log_level_ = 0;
 };
 
 }  // namespace nemo

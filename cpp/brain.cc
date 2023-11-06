@@ -78,11 +78,14 @@ Brain::Brain(float p, float beta, uint32_t seed)
       area_name_(1, "INVALID") {}
 
 Area& Brain::AddArea(const std::string& name, uint32_t n, uint32_t k,
-                     bool recurrent) {
+                     bool recurrent, bool is_explicit) {
   uint32_t area_i = areas_.size();
   areas_.push_back(Area(area_i, n, k));
   if (area_by_name_.find(name) != area_by_name_.end()) {
     fprintf(stderr, "Duplicate area name %s\n", name.c_str());
+  }
+  if (is_explicit) {
+    areas_[area_i].support = n;
   }
   area_by_name_[name] = area_i;
   area_name_.push_back(name);
@@ -175,14 +178,19 @@ void Brain::SimulateOneStep() {
       const Fiber& fiber = fibers_[fiber_i];
       const uint32_t num_activated = areas_[fiber.from_area].activated.size();
       if (!fiber.is_active || num_activated == 0) continue;
-      printf("%s%s", total_activated == 0 ? "\nProjecting " : ",",
-                 area_name_[fiber.from_area].c_str());
+      if (log_level_ > 0) {
+        printf("%s%s", total_activated == 0 ?
+               (log_level_ > 1 ? "\nProjecting " : "Projecting ") : ",",
+               area_name_[fiber.from_area].c_str());
+      }
       total_activated += num_activated;
     }
     if (total_activated == 0) {
       continue;
     }
-    printf(" into %s\n", area_name_[area_i].c_str());
+    if (log_level_ > 0) {
+      printf(" into %s\n", area_name_[area_i].c_str());
+    }
     std::vector<Synapse> activations(to_area.support);
     ComputeKnownActivations(to_area, activations);
     GenerateNewCandidates(to_area, total_activated, activations);
@@ -192,9 +200,11 @@ void Brain::SimulateOneStep() {
                        if (a.weight != b.weight) return a.weight > b.weight;
                        return a.neuron < b.neuron;
                      });
-    printf("[Area %s] Cutoff weight for best %d activations: %f\n",
-           area_name_[area_i].c_str(), to_area.k,
-           activations[to_area.k - 1].weight);
+    if (log_level_ > 1) {
+      printf("[Area %s] Cutoff weight for best %d activations: %f\n",
+             area_name_[area_i].c_str(), to_area.k,
+             activations[to_area.k - 1].weight);
+    }
     new_activated[area_i].resize(to_area.k);
     const uint32_t K = to_area.support;
     uint32_t num_new = 0;
@@ -208,8 +218,10 @@ void Brain::SimulateOneStep() {
         new_activated[area_i][i] = s.neuron;
       }
     }
-    printf("[Area %s] Num new activations: %u\n", area_name_[area_i].c_str(),
-           num_new);
+    if (log_level_ > 1) {
+      printf("[Area %s] Num new activations: %u\n", area_name_[area_i].c_str(),
+             num_new);
+    }
     UpdatePlasticity(to_area, new_activated[area_i]);
   }
   for (uint32_t area_i = 0; area_i < areas_.size(); ++area_i) {
@@ -270,9 +282,11 @@ void Brain::GenerateNewCandidates(const Area& to_area, uint32_t total_k,
     const float mu = total_k * p_;
     const float stddev = std::sqrt(total_k * p_ * (1.0f - p_));
     const float a = (cutoff - mu) / stddev;
-    printf("[Area %s] Generating candidates: percent=%f cutoff=%.0f "
-           "mu=%f stddev=%f a=%f\n", area_name_[to_area.index].c_str(), percent,
-           cutoff, mu, stddev, a);
+    if (log_level_ > 1) {
+      printf("[Area %s] Generating candidates: percent=%f cutoff=%.0f "
+             "mu=%f stddev=%f a=%f\n", area_name_[to_area.index].c_str(),
+             percent, cutoff, mu, stddev, a);
+    }
     float max_d = 0;
     float min_d = total_k;
     for (uint32_t i = 0; i < to_area.k; ++i) {
@@ -282,8 +296,10 @@ void Brain::GenerateNewCandidates(const Area& to_area, uint32_t total_k,
       min_d = std::min(d, min_d);
       activations.push_back({to_area.support + i, d});
     }
-    printf("[Area %s] Range of %d new candidate connections: %.0f .. %.0f\n",
-           area_name_[to_area.index].c_str(), to_area.k, min_d, max_d);
+    if (log_level_ > 1) {
+      printf("[Area %s] Range of %d new candidate connections: %.0f .. %.0f\n",
+             area_name_[to_area.index].c_str(), to_area.k, min_d, max_d);
+    }
   }
 }
 
@@ -395,8 +411,10 @@ void Brain::UpdatePlasticity(Area& to_area,
       }
     }
   }
-  printf("[Area %s] Total plasticity update: %zu\n",
-         area_name_[to_area.index].c_str(), total);
+  if (log_level_ > 1) {
+    printf("[Area %s] Total plasticity update: %zu\n",
+           area_name_[to_area.index].c_str(), total);
+  }
 }
 
 void Brain::LogGraphStats() {

@@ -16,6 +16,8 @@
 namespace nemo {
 namespace {
 
+constexpr int kLogLevel = 0;
+
 void Subsample(std::vector<uint32_t>& activated, float alpha, uint32_t seed) {
   std::mt19937 rng(seed);
   uint32_t new_k = alpha * activated.size();
@@ -43,29 +45,35 @@ size_t NumCommon(const std::vector<uint32_t>& a_in,
   return c.size();
 }
 
-Brain SetupOneStimulus(uint32_t n, uint32_t k, float p, float beta) {
+Brain SetupOneStimulus(uint32_t n, uint32_t k, float p, float beta,
+                       bool is_explicit = false) {
   Brain brain(p, beta, 7777);
   brain.AddStimulus("StimA", k);
-  brain.AddArea("A", n, k);
+  brain.AddArea("A", n, k, /*recurrent=*/true, is_explicit);
   brain.AddFiber("StimA", "A");
+  brain.SetLogLevel(kLogLevel);
   return brain;
 }
 
-Brain SetupTwoStimuli(uint32_t n, uint32_t k, float p, float beta) {
+Brain SetupTwoStimuli(uint32_t n, uint32_t k, float p, float beta,
+                      bool is_explicit = false) {
   Brain brain(p, beta, 7777);
   brain.AddStimulus("StimA", k);
   brain.AddStimulus("StimB", k);
-  brain.AddArea("A", n, k);
-  brain.AddArea("B", n, k);
+  brain.AddArea("A", n, k, /*recurrent=*/true, is_explicit);
+  brain.AddArea("B", n, k, /*recurrent=*/true, is_explicit);
   brain.AddFiber("StimA", "A");
   brain.AddFiber("StimB", "B");
+  brain.SetLogLevel(kLogLevel);
   return brain;
 }
 
 void Simulate(Brain& brain, int steps) {
   for (int i = 0; i < steps; ++i) {
     brain.SimulateOneStep();
-    brain.LogGraphStats();
+    if (kLogLevel > 1) {
+      brain.LogGraphStats();
+    }
   }
 }
 
@@ -101,13 +109,20 @@ void Project(Brain& brain,
 
 TEST(BrainTest, TestProjection) {
   Brain brain = SetupOneStimulus(1000000, 1000, 0.001, 0.05);
-  brain.LogGraphStats();
+  if (kLogLevel > 1) brain.LogGraphStats();
+  Project(brain, {{"StimA", {"A"}}, {"A", {"A"}}}, 25);
+}
+
+TEST(BrainTest, TestExplicitProjection) {
+  Brain brain = SetupOneStimulus(250000, 500, 0.01, 0.05,
+                                 /*is_explicit=*/true);
+  if (kLogLevel > 1) brain.LogGraphStats();
   Project(brain, {{"StimA", {"A"}}, {"A", {"A"}}}, 25);
 }
 
 TEST(BrainTest, TestCompletion) {
   Brain brain = SetupOneStimulus(100000, 317, 0.05, 0.05);
-  brain.LogGraphStats();
+  if (kLogLevel > 1) brain.LogGraphStats();
   Project(brain, {{"StimA", {"A"}}, {"A", {"A"}}}, 25);
   std::vector<uint32_t> prev_assembly = brain.GetArea("A").activated;
   // Recude A's assembly by half.
@@ -124,7 +139,7 @@ TEST(BrainTest, TestAssociation) {
   brain.AddArea("C", n, k);
   brain.AddFiber("A", "C");
   brain.AddFiber("B", "C");
-  brain.LogGraphStats();
+  if (kLogLevel > 1) brain.LogGraphStats();
 
   Project(brain,
           {{"StimA", {"A"}}, {"StimB", {"B"}}, {"A", {"A"}}, {"B", {"B"}}}, 10);
@@ -179,7 +194,7 @@ TEST(BrainTest, TestMerge) {
   brain.AddFiber("B", "C");
   brain.AddFiber("C", "A");
   brain.AddFiber("C", "B");
-  brain.LogGraphStats();
+  if (kLogLevel > 1) brain.LogGraphStats();
 
   Project(brain,
           {{"StimA", {"A"}}, {"StimB", {"B"}},
