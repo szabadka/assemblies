@@ -233,9 +233,11 @@ float LearnerBrain::TotalInput(const std::string& from,
                                   area_to.activated.end());
   float total_w = 0.0f;
   for (uint32_t neuron : area_from.activated) {
-    for (auto s : fiber.outgoing_synapses[neuron]) {
-      if (to_activated.find(s.neuron) != to_activated.end()) {
-        total_w += s.weight;
+    const auto& connections = fiber.outgoing_connections[neuron];
+    const auto& weights = fiber.outgoing_weights[neuron];
+    for (size_t i = 0; i < connections.size(); ++i) {
+      if (to_activated.find(connections[i]) != to_activated.end()) {
+        total_w += weights[i];
       }
     }
   }

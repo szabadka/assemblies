@@ -54,22 +54,23 @@ float TruncatedNorm(float a, Trng& rng) {
 }
 
 template<typename Trng>
-std::vector<Synapse> GenerateSynapses(uint32_t support, float p, Trng& rng) {
-  std::vector<Synapse> synapses;
+std::vector<uint32_t> GenerateConnections(uint32_t support, float p,
+                                          Trng& rng) {
+  std::vector<uint32_t> connections;
   if (support > 0) {
     std::binomial_distribution<> binom(support, p);
     std::uniform_int_distribution<> u(0, support - 1);
     std::vector<uint8_t> selected(support);
     const uint32_t num_synapses = binom(rng);
-    synapses.resize(num_synapses, {0, 1.0f});
+    connections.reserve(num_synapses);
     for (uint32_t i = 0; i < num_synapses; ++i) {
       uint32_t to;
       while (selected[to = u(rng)]) {}
       selected[to] = 1;
-      synapses[i].neuron = to;
+      connections.push_back(to);
     }
   }
-  return synapses;
+  return connections;
 }
 
 }  // namespace
@@ -113,8 +114,11 @@ void Brain::AddFiber(const std::string& from, const std::string& to,
   incoming_fibers_[area_to.index].push_back(fiber_i);
   outgoing_fibers_[area_from.index].push_back(fiber_i);
   for (uint32_t i = 0; i < area_from.support; ++i) {
-    std::vector<Synapse> synapses = GenerateSynapses(area_to.support, p_, rng_);
-    fiber.outgoing_synapses.emplace_back(std::move(synapses));
+    std::vector<uint32_t> connections =
+        GenerateConnections(area_to.support, p_, rng_);
+    std::vector<float> weights(connections.size(), 1.0f);
+    fiber.outgoing_connections.emplace_back(std::move(connections));
+    fiber.outgoing_weights.emplace_back(std::move(weights));
   }
   fibers_.emplace_back(std::move(fiber));
   if (bidirectional) {
@@ -330,16 +334,10 @@ void Brain::ComputeKnownActivations(const Area& to_area,
     if (!fiber.is_active) continue;
     const Area& from_area = areas_[fiber.from_area];
     for (uint32_t from_neuron : from_area.activated) {
-      for (const auto& s : fiber.outgoing_synapses[from_neuron]) {
-        activations[s.neuron].weight += s.weight;
-#if 0
-        if (fiber.to_area == 4 &&
-            (s.neuron == 16)) {
-          printf("    %u.%3u -> %u.%3u weight = %f\n",
-                 fiber.from_area, from_neuron, fiber.to_area, s.neuron,
-                 s.weight);
-        }
-#endif
+      const auto& connections = fiber.outgoing_connections[from_neuron];
+      const auto& weights = fiber.outgoing_weights[from_neuron];
+      for (size_t i = 0; i < connections.size(); ++i) {
+        activations[connections[i]].weight += weights[i];
       }
     }
   }
@@ -424,7 +422,8 @@ void Brain::ChooseSynapsesFromActivated(const Area& area,
     Fiber& fiber = fibers_[incoming_fibers[fiber_i]];
     const Area& from_area = areas_[fiber.from_area];
     uint32_t from = from_area.activated[next_i - offsets[fiber_i]];
-    fiber.outgoing_synapses[from].push_back({neuron, 1.0f});
+    fiber.outgoing_connections[from].push_back(neuron);
+    fiber.outgoing_weights[from].push_back(1.0f);
   }
 }
 
@@ -445,7 +444,8 @@ void Brain::ChooseSynapsesFromNonActivated(const Area& area,
       std::binomial_distribution<> binom(1, p_);
       for (size_t from = 0; from < from_area.support; ++from) {
         if (!selected[from] && binom(rng_)) {
-          fiber.outgoing_synapses[from].push_back({neuron, 1.0f});
+          fiber.outgoing_connections[from].push_back(neuron);
+          fiber.outgoing_weights[from].push_back(1.0f);
           ++total_synapses;
         }
       }
@@ -461,7 +461,8 @@ void Brain::ChooseSynapsesFromNonActivated(const Area& area,
             continue;
           }
           selected[from] = 1;
-          fiber.outgoing_synapses[from].push_back({neuron, 1.0f});
+          fiber.outgoing_connections[from].push_back(neuron);
+          fiber.outgoing_weights[from].push_back(1.0f);
           ++total_synapses;
           break;
         }
@@ -476,8 +477,10 @@ void Brain::ChooseOutgoingSynapses(const Area& area) {
     const Area& to_area = areas_[fiber.to_area];
     uint32_t support = to_area.support;
     if (area.index == to_area.index) ++support;
-    std::vector<Synapse> synapses = GenerateSynapses(support, p_, rng_);
-    fiber.outgoing_synapses.emplace_back(std::move(synapses));
+    std::vector<uint32_t> connections = GenerateConnections(support, p_, rng_);
+    std::vector<float> weights(connections.size(), 1.0f);
+    fiber.outgoing_connections.emplace_back(std::move(connections));
+    fiber.outgoing_weights.emplace_back(std::move(weights));
   }
 }
 
@@ -493,10 +496,11 @@ void Brain::UpdatePlasticity(Area& to_area,
     if (!fiber.is_active) continue;
     const Area& from_area = areas_[fiber.from_area];
     for (uint32_t from_neuron : from_area.activated) {
-      auto& synapses = fiber.outgoing_synapses[from_neuron];
-      for (auto& s : synapses) {
-        if (is_new_activated[s.neuron]) {
-          s.weight *= (1.0f + beta_);
+      const auto& connections = fiber.outgoing_connections[from_neuron];
+      auto& weights = fiber.outgoing_weights[from_neuron];
+      for (size_t i = 0; i < connections.size(); ++i) {
+        if (is_new_activated[connections[i]]) {
+          weights[i] *= (1.0f + beta_);
           ++total;
         }
       }
@@ -522,45 +526,37 @@ void Brain::LogGraphStats() {
     }
   }
   for (const Fiber& fiber : fibers_) {
-    if (fiber.outgoing_synapses.empty()) continue;
+    if (fiber.outgoing_connections.empty()) continue;
     size_t num_synapses = 0;
     float max_weight = 0.0;
     double total_weight = 0.0;
     uint32_t max_w_from = 0;
     uint32_t max_w_to = 0;
-    for (uint32_t i = 0; i < fiber.outgoing_synapses.size(); ++i) {
-      const auto& synapses = fiber.outgoing_synapses[i];
-      num_synapses += synapses.size();
+    for (uint32_t i = 0; i < fiber.outgoing_connections.size(); ++i) {
+      const auto& connections = fiber.outgoing_connections[i];
+      const auto& weights = fiber.outgoing_weights[i];
+      num_synapses += connections.size();
       //float max_neuron_w = 0.0;
-      for (const auto& s : synapses) {
-        //max_neuron_w = std::max(s.weight, max_neuron_w);
-        if (s.weight > max_weight) {
-          max_weight = s.weight;
+      for (size_t j = 0; j < connections.size(); ++j) {
+        //max_neuron_w = std::max(weights[j], max_neuron_w);
+        if (weights[j] > max_weight) {
+          max_weight = weights[j];
           max_w_from = i;
-          max_w_to = s.neuron;
+          max_w_to = connections[j];
         }
-        total_weight += s.weight;
+        total_weight += weights[j];
       }
       //max_weight = std::max(max_neuron_w, max_weight);
     }
     uint32_t from_support = areas_[fiber.from_area].support;
     uint32_t to_support = areas_[fiber.to_area].support;
     float empiric_p = num_synapses * 1.0 / from_support / to_support;
-    float reverse_max_weight = 0.0f;
-    if (fiber.from_area == fiber.to_area) {
-      const auto& synapses = fiber.outgoing_synapses[max_w_to];
-      for (const auto& s : synapses) {
-        if (s.neuron == max_w_from) {
-          reverse_max_weight = s.weight;
-        }
-      }
-    }
     printf("Fiber %s -> %s has %zu synapses, max w: %f "
-           "(%u -> %u, reverse: %f), "
+           "(%u -> %u), "
            "avg w: %f, p: %f\n",
            area_name_[fiber.from_area].c_str(),
            area_name_[fiber.to_area].c_str(), num_synapses, max_weight,
-           max_w_from, max_w_to, reverse_max_weight,
+           max_w_from, max_w_to,
            total_weight / from_support / to_support, empiric_p);
   }
 }

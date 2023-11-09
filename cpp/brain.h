@@ -32,7 +32,8 @@ struct Fiber {
   const uint32_t from_area;
   const uint32_t to_area;
   bool is_active = true;
-  std::vector<std::vector<Synapse>> outgoing_synapses;
+  std::vector<std::vector<uint32_t>> outgoing_connections;
+  std::vector<std::vector<float>> outgoing_weights;
 };
 
 typedef std::map<std::string, std::vector<std::string>> ProjectMap;
