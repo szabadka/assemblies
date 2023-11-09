@@ -68,15 +68,6 @@ Brain SetupTwoStimuli(uint32_t n, uint32_t k, float p, float beta,
   return brain;
 }
 
-void Simulate(Brain& brain, int steps) {
-  for (int i = 0; i < steps; ++i) {
-    brain.SimulateOneStep();
-    if (kLogLevel > 1) {
-      brain.LogGraphStats();
-    }
-  }
-}
-
 std::set<std::string> AllAreas(
     const std::map<std::string, std::vector<std::string>>& graph) {
   std::set<std::string> areas;
@@ -89,17 +80,15 @@ std::set<std::string> AllAreas(
   return areas;
 }
 
-void Project(Brain& brain,
-             const std::map<std::string, std::vector<std::string>>& graph,
+void Project(Brain& brain, const ProjectMap& graph,
              int steps, float convergence = 1.0) {
-  brain.InitProjection(graph);
   std::map<std::string, std::vector<uint32_t>> prev_activated;
   std::set<std::string> all_areas = AllAreas(graph);
-  Simulate(brain, steps - 1);
+  brain.Project(graph, steps - 1);
   for (const auto& area_name : all_areas) {
     prev_activated[area_name] = brain.GetArea(area_name).activated;
   }
-  Simulate(brain, 1);
+  brain.SimulateOneStep();
   for (const auto& area_name : all_areas) {
     const Area& area = brain.GetArea(area_name);
     ASSERT_GE(NumCommon(area.activated, prev_activated[area_name]),
@@ -109,20 +98,17 @@ void Project(Brain& brain,
 
 TEST(BrainTest, TestProjection) {
   Brain brain = SetupOneStimulus(1000000, 1000, 0.001, 0.05);
-  if (kLogLevel > 1) brain.LogGraphStats();
   Project(brain, {{"StimA", {"A"}}, {"A", {"A"}}}, 25);
 }
 
 TEST(BrainTest, TestExplicitProjection) {
   Brain brain = SetupOneStimulus(250000, 500, 0.01, 0.05,
                                  /*is_explicit=*/true);
-  if (kLogLevel > 1) brain.LogGraphStats();
   Project(brain, {{"StimA", {"A"}}, {"A", {"A"}}}, 25);
 }
 
 TEST(BrainTest, TestCompletion) {
   Brain brain = SetupOneStimulus(100000, 317, 0.05, 0.05);
-  if (kLogLevel > 1) brain.LogGraphStats();
   Project(brain, {{"StimA", {"A"}}, {"A", {"A"}}}, 25);
   std::vector<uint32_t> prev_assembly = brain.GetArea("A").activated;
   // Recude A's assembly by half.
@@ -139,7 +125,6 @@ TEST(BrainTest, TestAssociation) {
   brain.AddArea("C", n, k);
   brain.AddFiber("A", "C");
   brain.AddFiber("B", "C");
-  if (kLogLevel > 1) brain.LogGraphStats();
 
   Project(brain,
           {{"StimA", {"A"}}, {"StimB", {"B"}}, {"A", {"A"}}, {"B", {"B"}}}, 10);
@@ -190,11 +175,8 @@ TEST(BrainTest, TestMerge) {
   const int k = 317;
   Brain brain = SetupTwoStimuli(n, k, 0.01, 0.05);
   brain.AddArea("C", n, k);
-  brain.AddFiber("A", "C");
-  brain.AddFiber("B", "C");
-  brain.AddFiber("C", "A");
-  brain.AddFiber("C", "B");
-  if (kLogLevel > 1) brain.LogGraphStats();
+  brain.AddFiber("A", "C", /*bidirectional=*/true);
+  brain.AddFiber("B", "C", /*bidirectional=*/true);
 
   Project(brain,
           {{"StimA", {"A"}}, {"StimB", {"B"}},
