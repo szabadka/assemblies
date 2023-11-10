@@ -10,6 +10,8 @@
 
 namespace nemo {
 
+static const int kMaxWeightUpdates = 500;
+
 struct Synapse {
   uint32_t neuron;
   float weight;
@@ -66,6 +68,7 @@ class Brain {
 
   void SetLogLevel(int log_level) { log_level_ = log_level; }
   void LogGraphStats();
+  void LogActivated(const std::string& area_name);
 
  private:
   void ComputeKnownActivations(const Area& to_area,
@@ -87,9 +90,10 @@ class Brain {
   std::mt19937 rng_;
   int log_level_ = 0;
 
- private:
-  float p_;
-  float beta_;
+  const float p_;
+  const float beta_;
+  const float learn_rate_;
+  const float max_weight_;
   std::vector<Area> areas_;
   std::vector<Fiber> fibers_;
   std::vector<std::vector<uint32_t>> incoming_fibers_;

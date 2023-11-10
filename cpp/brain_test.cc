@@ -12,6 +12,7 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+#include "brain_util.h"
 
 namespace nemo {
 namespace {
@@ -31,18 +32,6 @@ void Subsample(std::vector<uint32_t>& activated, float alpha, uint32_t seed) {
     new_activated[i] = activated[next];
   }
   std::swap(activated, new_activated);
-}
-
-size_t NumCommon(const std::vector<uint32_t>& a_in,
-                 const std::vector<uint32_t>& b_in) {
-  std::vector<uint32_t> a = a_in;
-  std::vector<uint32_t> b = b_in;
-  std::sort(a.begin(), a.end());
-  std::sort(b.begin(), b.end());
-  std::vector<uint32_t> c;
-  std::set_intersection(a.begin(), a.end(), b.begin(), b.end(),
-                        std::back_inserter(c));
-  return c.size();
 }
 
 Brain SetupOneStimulus(uint32_t n, uint32_t k, float p, float beta,
@@ -98,7 +87,7 @@ void Project(Brain& brain, const ProjectMap& graph,
 
 TEST(BrainTest, TestProjection) {
   Brain brain = SetupOneStimulus(1000000, 1000, 0.001, 0.05);
-  Project(brain, {{"StimA", {"A"}}, {"A", {"A"}}}, 25);
+  Project(brain, {{"StimA", {"A"}}, {"A", {"A"}}}, 500);
 }
 
 TEST(BrainTest, TestExplicitProjection) {
@@ -183,7 +172,7 @@ TEST(BrainTest, TestMerge) {
            {"A", {"A", "C"}}, {"B", {"B", "C"}}}, 1, 0.0);
   Project(brain,
           {{"StimA", {"A"}}, {"StimB", {"B"}},
-           {"A", {"A", "C"}}, {"B", {"B", "C"}}, {"C", {"A", "B", "C"}}}, 50);
+           {"A", {"A", "C"}}, {"B", {"B", "C"}}, {"C", {"A", "B", "C"}}}, 500);
   ASSERT_LE(brain.GetArea("A").support, 10 * k);
   ASSERT_LE(brain.GetArea("B").support, 10 * k);
   ASSERT_LE(brain.GetArea("C").support, 20 * k);
@@ -194,7 +183,7 @@ TEST(BrainTest, TestMerge) {
   Project(brain, {{"StimA", {"A"}}, {"A", {"A", "C"}}, {"C", {"B", "C"}}},
           1, 0.0);
   Project(brain, {{"StimA", {"A"}}, {"A", {"A", "C"}}, {"C", {"B", "C"}},
-                  {"B", {"B"}}}, 50);
+                  {"B", {"B"}}}, 500);
   ASSERT_GE(NumCommon(brain.GetArea("B").activated, assembly_B), 0.95 * k);
 }
 
