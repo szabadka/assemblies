@@ -77,6 +77,16 @@ class Brain:
 		self.no_plasticity = False
 		self.no_print=False
 		self.use_normal_ppf=False
+		self.num_steps=0
+
+	def log_graph_stats(self):
+		print("Step %d" % self.num_steps)
+		for key in self.areas:
+			print("Area %s has %d neurons" % (key, self.areas[key].w))
+		for from_area in self.connectomes:
+			for to_area in self.connectomes[from_area]:
+				connectome = self.connectomes[from_area][to_area]
+				print("Fiber %s -> %s max weight: %f avg weight: %f" % (from_area, to_area, connectome.max(), connectome.sum() / connectome.size))
 
 	def add_stimulus(self, name, k):
 		self.stimuli[name] = Stimulus(k)
@@ -170,6 +180,7 @@ class Brain:
 				self.areas[area].stimulus_beta[stim] = new_beta
 
 	def activate(self, area_name, index):
+		print("Activating %s assembly %d" % (area_name, index))
 		area = self.areas[area_name]
 		k = area.k 
 		assembly_start = k*index
@@ -177,6 +188,7 @@ class Brain:
 		area.fix_assembly()
 
 	def project(self, stim_to_area, area_to_area, verbose=False):
+		print("project")
 		# Validate stim_area, area_area well defined
 		# stim_to_area: {"stim1":["A"], "stim2":["C","A"]}
 		# area_to_area: {"A":["A","B"],"C":["C","A"]}
@@ -216,6 +228,12 @@ class Brain:
 			self.areas[area].update_winners()
 			if self.save_size:
 				self.areas[area].saved_w.append(self.areas[area].w)
+		if verbose:
+			self.log_graph_stats()
+
+		if not self.no_plasticity:
+			self.num_steps += 1
+
 
 	def project_into(self, area, from_stimuli, from_areas, verbose=False):
 	# projecting everything in from stim_in[area] and area_in[area]
@@ -244,9 +262,9 @@ class Brain:
 				for i in range(area.w):
 					prev_winner_inputs[i] += connectome[w][i]
 
-		if verbose:
-			print("prev_winner_inputs: ")
-			print(prev_winner_inputs)
+		#if verbose:
+			#print("prev_winner_inputs: ")
+			#print(prev_winner_inputs)
 
 		# simulate area.k potential new winners if the area is not explicit 
 		if not area.explicit:
@@ -302,15 +320,17 @@ class Brain:
 				std = math.sqrt(total_k * self.p * (1.0-self.p))
 			a = float(alpha - mu) / std
 			b = float(total_k - mu) / std
+			if verbose:
+				print("mu = %f stddev = %f a = %f b = %f" % (mu, std, a, b))
 			potential_new_winners = truncnorm.rvs(a, b, scale=std, size=area.k)
 			for i in range(area.k):
 				potential_new_winners[i] += mu
 				potential_new_winners[i] = round(potential_new_winners[i])
 			potential_new_winners = potential_new_winners.tolist()
 
-			if verbose:
-				print("potential_new_winners: ")
-				print(potential_new_winners)
+			#if verbose:
+				#print("potential_new_winners: ")
+				#print(potential_new_winners)
 
 			# take max among prev_winner_inputs, potential_new_winners
 			# get num_first_winners (think something small)
@@ -342,8 +362,9 @@ class Brain:
 		# print name + " num_first_winners = " + str(num_first_winners)
 
 		if verbose:
-			print("new_winners: ")
-			print(area.new_winners)
+			#print("new_winners: ")
+			#print(area.new_winners)
+			print("new_first_winners: %d" % num_first_winners)
 
 		# for i in num_first_winners
 		# generate where input came from
@@ -358,9 +379,9 @@ class Brain:
 				inputs[j] = sum([((total_so_far + input_sizes[j]) > w >= total_so_far) for w in input_indices])
 				total_so_far += input_sizes[j]
 			first_winner_to_inputs[i] = inputs
-			if verbose:
-				print("for first_winner # " + str(i) + " with input " + str(first_winner_inputs[i]) + " split as so: ")
-				print(inputs)
+			#if verbose:
+				#print("for first_winner # " + str(i) + " with input " + str(first_winner_inputs[i]) + " split as so: ")
+				#print(inputs)
 
 		m = 0
 		# connectome for each stim->area
@@ -377,9 +398,9 @@ class Brain:
 				stim_to_area_beta = 0.0
 			for i in area.new_winners:
 				self.stimuli_connectomes[stim][name][i] *= (1+stim_to_area_beta)
-			if verbose:
-				print(stim + " now looks like: ")
-				print(self.stimuli_connectomes[stim][name])
+			#if verbose:
+				#print(stim + " now looks like: ")
+				#print(self.stimuli_connectomes[stim][name])
 			m += 1
 
 		# !!!!!!!!!!!!!!!!
@@ -409,9 +430,9 @@ class Brain:
 			for i in area.new_winners:
 				for j in from_area_winners:
 					self.connectomes[from_area][name][j][i] *= (1.0 + area_to_area_beta)
-			if verbose:
-				print("Connectome of " + from_area + " to " + name + " is now:")
-				print(self.connectomes[from_area][name])
+			#if verbose:
+				#print("Connectome of " + from_area + " to " + name + " is now:")
+				#print(self.connectomes[from_area][name])
 			m += 1
 
 		# expand connectomes from other areas that did not fire into area
@@ -430,9 +451,9 @@ class Brain:
 			for i in range(area.w, area.new_w):
 				for j in range(columns):
 					self.connectomes[name][other_area][i][j] = np.random.binomial(1, self.p)
-			if verbose:
-				print("Connectome of " + name + " to " + other_area + " is now:")
-				print(self.connectomes[name][other_area])
+			#if verbose:
+				#print("Connectome of " + name + " to " + other_area + " is now:")
+				#print(self.connectomes[name][other_area])
 
 		return num_first_winners
 

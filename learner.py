@@ -276,6 +276,7 @@ class LearnBrain(brain.Brain):
 
 	def project_star(self, mutual_inhibition=False):
 		# compute the initial (t=1) project map; NOUN and VERB do not yet have any winners
+		print("project_star")
 		project_map = {PHON: [NOUN, VERB]}
 		if self.areas[MOTOR].winners:
 			project_map[MOTOR] = [VERB]
@@ -289,7 +290,7 @@ class LearnBrain(brain.Brain):
 				if self.areas[extra_context_area_name].winners:
 					project_map[extra_context_area_name] = [NOUN, VERB]
 					print("PROJECTING FROM EXTRA AREA " + str(extra_context_area_name))
-		self.project({}, project_map)
+		self.project({}, project_map, verbose=True)
 
 
 		# for subsequent rounds, now include recurrent firing + firing from NOUN/VERB
@@ -315,7 +316,7 @@ class LearnBrain(brain.Brain):
 					project_map[LANG].remove(NOUN)
 
 		for _ in range(self.proj_rounds):
-			self.project({}, project_map)
+			self.project({}, project_map, verbose=True)
 
 	def parse_sentence(self, sentence):
 		# sentence in the form [NOUN verb]
@@ -327,6 +328,7 @@ class LearnBrain(brain.Brain):
 		self.sentences_parsed += 1
 
 	def parse_indexed_sentence(self, noun_index, verb_index, order="NV"):
+		print("Parsing sentence %d %d" % (noun_index, verb_index))
 		motor_index = verb_index - self.num_nouns
 		self.activate(VISUAL, noun_index)
 		self.activate(MOTOR, motor_index)
@@ -491,8 +493,8 @@ class LearnBrain(brain.Brain):
 		self.activate_index_context(word_index, use_extra_context)
 		area = self.get_index_context_area(word_index)
 		to_area = self.get_index_lexical_area(word_index)
-		self.project({}, {area: [to_area]})
-		self.project({}, {to_area: [PHON]})
+		self.project({}, {area: [to_area]}, verbose=True)
+		self.project({}, {to_area: [PHON]}, verbose=True)
 		self.no_plasticity = False
 		out = self.get_explicit_assembly(PHON, min_overlap)
 		if not no_print:
