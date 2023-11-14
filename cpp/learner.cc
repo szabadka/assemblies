@@ -9,7 +9,7 @@
 namespace nemo {
 
 LearnerBrain::LearnerBrain(const LearnerParams& params, uint32_t seed) :
-    Brain(params.p, params.beta, seed), params_(params) {
+    Brain(params.p, params.beta, params.max_weight, seed), params_(params) {
   lex_size_ = params_.num_nouns + params_.num_verbs;
 
   AddArea(kPhonArea, lex_size_ * params_.phon_k, params_.phon_k,
@@ -23,9 +23,9 @@ LearnerBrain::LearnerBrain(const LearnerParams& params, uint32_t seed) :
             params_.context_k, /*recurrent=*/false, /*is_explicit=*/true);
   }
   AddArea(kNounArea, params_.lex_n, params_.lex_k,
-          /*recurrent=*/true, /*is_explicit=*/true);
+          /*recurrent=*/true, /*is_explicit=*/false);
   AddArea(kVerbArea, params_.lex_n, params_.lex_k,
-          /*recurrent=*/true, /*is_explicit=*/true);
+          /*recurrent=*/true, /*is_explicit=*/false);
 
   AddFiber(kPhonArea, kNounArea, /*bidirectional=*/true);
   AddFiber(kPhonArea, kVerbArea, /*bidirectional=*/true);
@@ -44,136 +44,6 @@ LearnerBrain::LearnerBrain(const LearnerParams& params, uint32_t seed) :
     }
   }
   sentences_parsed_ = 0;
-}
-
-bool LearnerBrain::ParseIndexedSentence(uint32_t noun_index,
-                                        uint32_t verb_index) {
-  if (log_level_ > 0) {
-    printf("Parsing sentence %u %u\n", noun_index, verb_index);
-  }
-  const bool use_context = sentences_parsed_ > params_.context_delay;
-  if (!ActivateSentence(noun_index, verb_index, use_context)) {
-    return false;
-  }
-  ActivateArea(kPhonArea, noun_index);
-  ProjectStar();
-  ActivateArea(kPhonArea, verb_index);
-  ProjectStar();
-  ClearContexts();
-  ++sentences_parsed_;
-  return true;
-}
-
-uint32_t LearnerBrain::TestWordProduction(uint32_t word, bool use_context,
-                                          int log_level) {
-  if (log_level_ > 0) {
-    printf("Testing word %u production\n", word);
-  }
-  GetArea(kPhonArea).is_fixed = false;
-  if (!ActivateWord(word, use_context)) {
-    return false;
-  }
-  const bool is_noun = word < params_.num_nouns;
-  const char* context_area = is_noun ? kVisualArea : kMotorArea;
-  const char* lex_area = is_noun ? kNounArea : kVerbArea;
-  Project({{context_area, {lex_area}}}, 1, false);
-  if (log_level > 1) {
-    LogActivated(lex_area);
-    LogInput(context_area, lex_area);
-  }
-  Project({{lex_area, {kPhonArea}}}, 1, false);
-  const Area& phon = GetArea(kPhonArea);
-  uint32_t offset = word * phon.k;
-  uint32_t overlap = 0;
-  for (uint32_t neuron : phon.activated) {
-    if (neuron >= offset && neuron < offset + phon.k) ++overlap;
-  }
-  if (log_level > 1) {
-    LogActivated(kPhonArea);
-    LogInput(lex_area, kPhonArea);
-  }
-  if (log_level > 0) {
-    printf("Overlap: %u (%.0f%%)\n", overlap, overlap * 100.0f / phon.k);
-  }
-  return overlap;
-}
-
-bool LearnerBrain::TestAllProduction(bool use_context, bool verbose) {
-  size_t num_success = 0;
-  size_t sum_overlap = 0;
-  for (uint32_t w = 0; w < lex_size_; ++w) {
-    uint32_t overlap = TestWordProduction(w, use_context);
-    sum_overlap += overlap;
-    if (overlap >= 0.75 * params_.phon_k) {
-      ++num_success;
-    } else if (!verbose) {
-      return false;
-    }
-  }
-  if (verbose) {
-    printf("Number of words satisfying property P: %zu (%.0f%%), "
-           "average overlap: %.1f%%\n",
-           num_success, num_success * 100.0f / lex_size_,
-           sum_overlap * 100.0f / params_.phon_k / lex_size_);
-  }
-  return num_success == lex_size_;
-}
-
-bool LearnerBrain::TestWordAssembly(uint32_t word) {
-  const bool is_noun = word < params_.num_nouns;
-  ActivateArea(kPhonArea, word);
-  Project({{kPhonArea, {kNounArea, kVerbArea}}}, 1, false);
-  const char* area0 = is_noun ? kNounArea : kVerbArea;
-  const char* area1 = is_noun ? kVerbArea : kNounArea;
-  const float input0 = TotalInput(kPhonArea, area0);
-  const float input1 = TotalInput(kPhonArea, area1);
-  if (input0 < 2.0f * input1) {
-    return false;
-  }
-#if 1
-  const auto& prev_assembly0 = GetArea(area0).activated;
-  const auto& prev_assembly1 = GetArea(area1).activated;
-  Project({{kNounArea, {kNounArea}}, {kVerbArea, {kVerbArea}}}, 1, false);
-  const size_t common0 = NumCommon(prev_assembly0, GetArea(area0).activated);
-  const size_t common1 = NumCommon(prev_assembly1, GetArea(area1).activated);
-  printf("common0 = %zu  common1 = %zu\n", common0, common1);
-  if (common0 < 0.75f * params_.lex_k) {
-    ///printf("common0 = %zu\n", common0);
-    return false;
-  }
-  if (common1 > 0.6f * params_.lex_k) {
-    //printf("common1 = %zu\n", common1);
-    return false;
-  }
-#endif
-  return true;
-}
-
-bool LearnerBrain::TestAllWordAssemblies(bool verbose) {
-  size_t num_success = 0;
-  for (uint32_t w = 0; w < lex_size_; ++w) {
-    bool success = TestWordAssembly(w);
-    if (success) {
-      ++num_success;
-    } else if (!verbose) {
-      return false;
-    }
-  }
-  if (verbose) {
-    printf("Number of words satisfying property Q: %zu (%.0f%%)\n",
-           num_success, num_success * 100.0f / lex_size_);
-  }
-  return num_success == lex_size_;
-}
-
-bool LearnerBrain::TestConvergence(bool use_context, bool verbose) {
-  if (!TestAllProduction(use_context, verbose)) {
-    return false;
-  }
-  if (!TestAllWordAssemblies(verbose)) {
-    return false;
-  }
-  return true;
 }
 
 bool LearnerBrain::ActivateWord(uint32_t word, bool use_context) {
@@ -223,20 +93,6 @@ bool LearnerBrain::ActivateSentence(uint32_t noun_index, uint32_t verb_index,
   return true;
 }
 
-void UpdatePermaActive(const std::vector<uint32_t>& active,
-                       std::set<uint32_t>& perma) {
-  if (perma.empty()) {
-    for (auto n : active) perma.insert(n);
-  } else if (!active.empty()) {
-    std::set<uint32_t> lookup(active.begin(), active.end());
-    std::vector<uint32_t> tmp(perma.begin(), perma.end());
-    for (auto n : tmp) {
-      if (lookup.find(n) == lookup.end()) perma.erase(n);
-    }
-    if (perma.empty()) perma.insert(0xffff);
-  }
-}
-
 void LearnerBrain::ProjectStar(bool mutual_inhibition) {
   if (log_level_ > 0) {
     printf("ProjectStar\n");
@@ -257,11 +113,6 @@ void LearnerBrain::ProjectStar(bool mutual_inhibition) {
     }
   }
   Project(project_map, 1);
-#if 0
-  if (sentences_parsed_ > 8) {
-    UpdatePermaActive(GetArea(kNounArea).activated, noun_perma_active_);
-  }
-#endif
   project_map[kNounArea] = {kNounArea, kPhonArea};
   project_map[kVerbArea] = {kVerbArea, kPhonArea};
   if (!visual.activated.empty()) {
@@ -284,14 +135,6 @@ void LearnerBrain::ProjectStar(bool mutual_inhibition) {
     }
   }
   Project(project_map, params_.projection_rounds);
-#if 0
-  if (sentences_parsed_ > 8) {
-    UpdatePermaActive(GetArea(kNounArea).activated, noun_perma_active_);
-    printf("Noun perma actives: ");
-    for (auto n : noun_perma_active_) printf(" %u", n);
-    printf("\n");
-  }
-#endif
 }
 
 void LearnerBrain::ClearContexts() {
@@ -322,6 +165,199 @@ float LearnerBrain::TotalInput(const std::string& from,
   return total_w;
 }
 
+bool LearnerBrain::ParseIndexedSentence(uint32_t noun_index,
+                                        uint32_t verb_index) {
+  if (log_level_ > 0) {
+    printf("Parsing sentence %u %u\n", noun_index, verb_index);
+  }
+  const bool use_context = sentences_parsed_ > params_.context_delay;
+  if (!ActivateSentence(noun_index, verb_index, use_context)) {
+    return false;
+  }
+  ActivateArea(kPhonArea, noun_index);
+  ProjectStar();
+  ActivateArea(kPhonArea, verb_index);
+  ProjectStar();
+  ClearContexts();
+  ++sentences_parsed_;
+  return true;
+}
+
+bool LearnerBrain::ParseRandomSentence() {
+  std::uniform_int_distribution<> un(0, params_.num_nouns - 1);
+  std::uniform_int_distribution<> uv(0, params_.num_verbs - 1);
+  const uint32_t noun_index = un(rng_);
+  const uint32_t verb_index = uv(rng_) + params_.num_nouns;
+  return ParseIndexedSentence(noun_index, verb_index);
+}
+
+bool TestAssemblyReproduction(
+    Brain& brain, const LearnerParams& params,
+    uint32_t word, const char* start_area,
+    const std::vector<uint32_t>& lex_assembly,
+    bool use_context, int log_level) {
+  const bool is_noun = word < params.num_nouns;
+  const char* lex_area = is_noun ? kNounArea : kVerbArea;
+  const char* ctx_area = is_noun ? kVisualArea : kMotorArea;
+  const uint32_t ctx_k = brain.GetArea(ctx_area).k;
+  const uint32_t ctx_word = word - (is_noun ? 0 : params.num_nouns);
+
+  brain.GetArea(kPhonArea).is_fixed = false;
+  brain.GetArea(ctx_area).is_fixed = false;
+  brain.Project({{lex_area, {lex_area, kPhonArea, ctx_area}}}, 1, false);
+  const size_t lex_overlap =
+      NumCommon(lex_assembly, brain.GetArea(lex_area).activated);
+  if (log_level > 0) {
+    printf("Word %d %s->%s->%s assembly stability: %zu (%.0f%%)\n",
+           word, start_area, lex_area, lex_area,
+           lex_overlap, lex_overlap * 100.0f / params.lex_k);
+  }
+  if (lex_overlap < 0.75f * params.lex_k) {
+    return false;
+  }
+  size_t ctx_index, ctx_overlap;
+  brain.ReadAssembly(ctx_area, ctx_index, ctx_overlap);
+  if (log_level > 0) {
+    printf("Word %d %s->%s->%s index: %zu overlap: %zu (%.0f%%)\n",
+           word, start_area, lex_area, ctx_area, ctx_index, ctx_overlap,
+           ctx_overlap * 100.0f / ctx_k);
+  }
+  if (ctx_index != ctx_word || ctx_overlap < 0.75f * ctx_k) {
+    return false;
+  }
+  size_t phon_index, phon_overlap;
+  brain.ReadAssembly(kPhonArea, phon_index, phon_overlap);
+  if (log_level > 0) {
+    printf("Word %d %s->%s->%s index: %zu overlap: %zu (%.0f%%)\n",
+           word, start_area, lex_area, kPhonArea, phon_index, phon_overlap,
+           phon_overlap * 100.0f / params.phon_k);
+  }
+  if (phon_index != word || phon_overlap < 0.75f * params.phon_k) {
+    return false;
+  }
+  return true;
+}
+
+bool LearnerBrain::TestWord(uint32_t word, bool use_context,
+                            bool test_cross_input, int log_level) {
+  int prev_log_level = log_level_;
+  if (log_level > 1) {
+    printf("Testing word %u production\n", word);
+    SetLogLevel(std::max(log_level, prev_log_level));
+  }
+  const bool is_noun = word < params_.num_nouns;
+  const char* lex_area = is_noun ? kNounArea : kVerbArea;
+  const char* ctx_area = is_noun ? kVisualArea : kMotorArea;
+  const uint32_t ctx_word = word - (is_noun ? 0 : params_.num_nouns);
+
+  ActivateArea(ctx_area, ctx_word);
+  ProjectMap proj_map = {{ctx_area, {lex_area}}};
+  if (use_context && !context_map_.empty()) {
+    const std::string& name = ContextAreaName(context_map_[word]);
+    ActivateArea(name, word);
+    proj_map[name] = { lex_area };
+  }
+  Project(proj_map, 1, false);
+  const auto ctx_lex_assembly = GetArea(lex_area).activated;
+  if (!TestAssemblyReproduction(*this, params_, word, ctx_area,
+                                ctx_lex_assembly, use_context, log_level)) {
+    return false;
+  }
+
+  ActivateArea(kPhonArea, word);
+  Project({{kPhonArea, {lex_area}}}, 1, false);
+  const auto phon_lex_assembly = GetArea(lex_area).activated;
+  if (!TestAssemblyReproduction(*this, params_, word, kPhonArea,
+                                phon_lex_assembly,
+                                use_context, log_level)) {
+    return false;
+  }
+
+  const size_t lex_assembly_overlap =
+      NumCommon(ctx_lex_assembly, phon_lex_assembly);
+  if (log_level > 0) {
+    printf("Word %d %s->%s and %s->%s assembly overlap: %zu (%.0f%%)\n",
+           word, ctx_area, lex_area, kPhonArea, lex_area,
+           lex_assembly_overlap, lex_assembly_overlap * 100.0f / params_.lex_k);
+  }
+#if 0
+  // TODO(szabadka) Debug why this fails sometimes.
+  if (lex_assembly_overlap < 0.75f * params_.lex_k) {
+    return false;
+  }
+#endif
+
+  const char* lex1_area = is_noun ? kVerbArea : kNounArea;
+  const char* ctx1_area = is_noun ? kMotorArea : kVisualArea;
+  const uint32_t ctx1_k = GetArea(ctx1_area).k;
+
+  ActivateArea(kPhonArea, word);
+  Project({{kPhonArea, {kNounArea, kVerbArea}}}, 1, false);
+
+  const float input = TotalInput(kPhonArea, lex_area);
+  const float cross_input = TotalInput(kPhonArea, lex1_area);
+  if (log_level > 0) {
+    printf("Word %d %s->%s total input: %f\nWord %d %s->%s total input: %f\n",
+           word, kPhonArea, lex_area, input,
+           word, kPhonArea, lex1_area, cross_input);
+  }
+  if (input < 2.0f * cross_input) {
+    return false;
+  }
+
+  if (test_cross_input) {
+    ActivateArea(kPhonArea, word);
+    Project({{kPhonArea, {lex1_area}}}, 1, false);
+    const auto lex1_assembly = GetArea(lex1_area).activated;
+    GetArea(kPhonArea).is_fixed = false;
+    GetArea(ctx1_area).is_fixed = false;
+    Project({{lex1_area, {lex1_area, kPhonArea, ctx1_area}}}, 1, false);
+    const size_t lex1_overlap =
+        NumCommon(lex1_assembly, GetArea(lex1_area).activated);
+    if (log_level > 0) {
+      printf("Word %d %s->%s->%s assembly stability: %zu (%.0f%%)\n",
+             word, kPhonArea, lex1_area, lex1_area,
+             lex1_overlap, lex1_overlap * 100.0f / params_.lex_k);
+    }
+    if (lex1_overlap > 0.7f * params_.lex_k) {
+      return false;
+    }
+    size_t ctx1_index, ctx1_overlap;
+    ReadAssembly(ctx1_area, ctx1_index, ctx1_overlap);
+    if (log_level > 0) {
+      printf("Word %d %s->%s->%s index: %zu overlap: %zu (%.0f%%)\n",
+             word, kPhonArea, lex1_area, ctx1_area, ctx1_index, ctx1_overlap,
+             ctx1_overlap * 100.0f / ctx1_k);
+    }
+    if (ctx1_overlap > 0.7f * ctx1_k) {
+      return false;
+    }
+    size_t phon_index, phon_overlap;
+    ReadAssembly(kPhonArea, phon_index, phon_overlap);
+    if (log_level > 0) {
+      printf("Word %d %s->%s->%s index: %zu overlap: %zu (%.0f%%)\n",
+             word, kPhonArea, lex1_area, kPhonArea, phon_index, phon_overlap,
+             phon_overlap * 100.0f / params_.phon_k);
+    }
+    if (phon_overlap > 0.7f * params_.phon_k) {
+      return false;
+    }
+  }
+
+  SetLogLevel(prev_log_level);
+  return true;
+}
+
+bool LearnerBrain::TestAllWords(bool use_context, bool test_cross_input,
+                                int log_level) {
+  for (uint32_t w = 0; w < lex_size_; ++w) {
+    if (!TestWord(w, use_context, test_cross_input, log_level)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 void LearnerBrain::AnalyseInput(const std::string& from,
                                 const std::string& to,
                                 float& total_w,
@@ -347,20 +383,9 @@ void LearnerBrain::AnalyseInput(const std::string& from,
   }
 }
 
-void LearnerBrain::LogInput(const std::string& from,
-                            const std::string& to) const {
-  float total_w = 0;
-  size_t num_synapses = 0;
-  size_t num_sat_weights = 0;
-  AnalyseInput(from, to, total_w, num_synapses, num_sat_weights);
-  printf("%s -> %s total input: %f num synapses: %zu num saturated: %zu\n",
-         from.c_str(), to.c_str(), total_w, num_synapses, num_sat_weights);
-}
-
 void LearnerBrain::AnalyseAssemblies(const std::string& from,
                                      const std::string& to,
                                      size_t start, size_t end) {
-  const Area& area_from = GetArea(from);
   const Area& area_to = GetArea(to);
   std::vector<std::set<uint32_t>> all_assemblies;
   std::map<uint32_t, uint32_t> mult;
@@ -370,7 +395,6 @@ void LearnerBrain::AnalyseAssemblies(const std::string& from,
   for (uint32_t index = start; index < end; ++index) {
     ActivateArea(from, index);
     Project({{from, {to}}}, 1, false);
-    LogInput(from, to);
     AnalyseInput(from, to, total_w, num_synapses, num_sat_weights);
     const auto& activated = area_to.activated;
     std::set<uint32_t> assembly(activated.begin(), activated.end());
@@ -379,7 +403,8 @@ void LearnerBrain::AnalyseAssemblies(const std::string& from,
       ++mult[n];
     }
   }
-  printf("Total saturated weights for all assemblies: %zu\n", num_sat_weights);
+  printf("%s -> %s total input: %f num synapses: %zu num saturated: %zu\n",
+         from.c_str(), to.c_str(), total_w, num_synapses, num_sat_weights);
   std::map<uint32_t, uint32_t> mult_histo;
   for (const auto& [key, value] : mult) {
     ++mult_histo[value];

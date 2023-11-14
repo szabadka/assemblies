@@ -1,79 +1,87 @@
 #include "learner.h"
 
-#include <random>
-
 #include <gtest/gtest.h>
-
-constexpr int kLogLevel = 0;
 
 namespace nemo {
 namespace {
 
-bool TrainExperiment(uint32_t seed, size_t& num) {
+class LearnerTestParam : public testing::TestWithParam<uint32_t> {};
+
+TEST_P(LearnerTestParam, Small) {
   LearnerParams params;
-  LearnerBrain learner(params, seed);
-  learner.SetLogLevel(kLogLevel);
-  num = 0;
-  const bool use_context = false; //params.context_areas > 0;
-  bool success = false;
-  const size_t n = params.num_nouns;
-  const size_t v = params.num_verbs;
-  size_t max_num_sentences = 100 * (n + v);
-  std::mt19937 rng(1777);
-  std::uniform_int_distribution<> un(0, n - 1);
-  std::uniform_int_distribution<> uv(0, v - 1);
-  for (; num < max_num_sentences; ++num) {
-    if (num > 0 && num % 10 == 0) {
-      const bool verbose = num % 100 == 0;
-      if (verbose) {
-        printf("\nNumber of sentences trained: %zu\n", num);
-      }
-      if (learner.TestConvergence(use_context, verbose)) {
-        success = true;
-        break;
-      }
-      if (verbose) {
-        learner.LogGraphStats();
-      }
-    }
-    learner.ParseIndexedSentence(un(rng), n + uv(rng));
+  params.beta = 0.06;
+  params.max_weight = 1000.0;
+  params.lex_n = 100000;
+  params.num_nouns = 2;
+  params.num_verbs = 2;
+  LearnerBrain learner(params, GetParam());
+  for (size_t i = 0; i < 60; ++i) {
+    learner.ParseRandomSentence();
   }
   learner.LogGraphStats();
-#if 0
-  printf("\n\n");
-  learner.SetLogLevel(0);
-  learner.TestWordProduction(0, false, 2);
-  printf("\n");
-  learner.TestWordProduction(n - 1, false, 2);
-  printf("\n");
-  learner.TestWordProduction(n, false, 2);
-  printf("\n");
-  learner.TestWordProduction(n + v - 1, false, 2);
-  printf("\n\n");
-  learner.AnalyseAssemblies(kVisualArea, kNounArea, 0, n);
-  learner.AnalyseAssemblies(kPhonArea, kNounArea, 0, n);
-  learner.AnalyseAssemblies(kPhonArea, kNounArea, n, n + v);
-  learner.AnalyseAssemblies(kMotorArea, kVerbArea, 0, n);
-  learner.AnalyseAssemblies(kPhonArea, kVerbArea, n, n + v);
-  learner.AnalyseAssemblies(kPhonArea, kVerbArea, 0, n);
-  learner.SetLogLevel(kLogLevel);
-#endif
-  printf("%s after %zu sentences\n", success ? "Success" : "Failure", num);
-  learner.TestConvergence(use_context, true);
-  return success;
+  EXPECT_TRUE(learner.TestAllWords(
+      /*use_context=*/false, /*test_cross_input=*/false, /*log_level=*/1));
 }
 
-TEST(LearnerTest, Simple) {
-  uint32_t total = 0;
-  const int num_reruns = 1;
-  for (int rerun = 0; rerun < num_reruns; ++rerun) {
-    size_t num;
-    bool success = TrainExperiment(7774 + 0 + rerun * 17, num);
-    EXPECT_TRUE(success);
-    total += num;
+#if 0
+TEST_P(LearnerTestParam, SmallWithContext) {
+  LearnerParams params;
+  params.beta = 0.1;
+  params.max_weight = 10000.0;
+  params.lex_n = 100000;
+  params.num_nouns = 2;
+  params.num_verbs = 2;
+  params.context_areas = 5;
+  LearnerBrain learner(params, GetParam());
+  for (size_t i = 0; i < 60; ++i) {
+    learner.ParseRandomSentence();
   }
-  printf("Average sentences: %f\n", total * 1.0f / num_reruns);
+  learner.LogGraphStats();
+  EXPECT_TRUE(learner.TestAllWords(
+      /*use_context=*/true, /*test_cross_input=*/false, /*log_level=*/1));
 }
+#endif
+
+TEST_P(LearnerTestParam, Medium) {
+  LearnerParams params;
+  params.beta = 0.1;
+  params.max_weight = 10000.0;
+  params.lex_n = 1000000;
+  params.lex_k = 50;
+  params.num_nouns = 20;
+  params.num_verbs = 20;
+  params.projection_rounds = 2;
+  LearnerBrain learner(params, GetParam());
+  for (size_t i = 0; i < 1000; ++i) {
+    learner.ParseRandomSentence();
+  }
+  learner.LogGraphStats();
+  EXPECT_TRUE(learner.TestAllWords(
+      /*use_context=*/false, /*test_cross_input=*/false, /*log_level=*/1));
+}
+
+#if 0
+TEST_P(LearnerTestParam, Large) {
+  LearnerParams params;
+  params.beta = 0.1;
+  params.max_weight = 10000.0;
+  params.lex_n = 1000000;
+  params.lex_k = 50;
+  params.num_nouns = 400;
+  params.num_verbs = 400;
+  params.projection_rounds = 2;
+  LearnerBrain learner(params, GetParam());
+  for (size_t i = 0; i < 10000; ++i) {
+    learner.ParseRandomSentence();
+  }
+  learner.LogGraphStats();
+  EXPECT_TRUE(learner.TestAllWords(
+      /*use_context=*/false, /*test_cross_input=*/false, /*log_level=*/1));
+}
+#endif
+
+INSTANTIATE_TEST_SUITE_P(LearnerTest, LearnerTestParam,
+                         testing::Values(7, 77, 777, 7777, 77777));
 
 }  // namespace
 }  // namespace nemo

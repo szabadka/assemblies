@@ -10,8 +10,6 @@
 
 namespace nemo {
 
-static const int kMaxWeightUpdates = 500;
-
 struct Synapse {
   uint32_t neuron;
   float weight;
@@ -42,7 +40,7 @@ typedef std::map<std::string, std::vector<std::string>> ProjectMap;
 
 class Brain {
  public:
-  Brain(float p, float beta, uint32_t seed);
+  Brain(float p, float beta, float max_weight, uint32_t seed);
 
   Area& AddArea(const std::string& name, uint32_t n, uint32_t k,
                 bool recurrent = true, bool is_explicit = false);
@@ -65,6 +63,8 @@ class Brain {
   void SimulateOneStep(bool update_plasticity = true);
   void Project(const ProjectMap& graph, uint32_t num_steps,
                bool update_plasticity = true);
+
+  void ReadAssembly(const std::string& name, size_t& index, size_t& overlap);
 
   void SetLogLevel(int log_level) { log_level_ = log_level; }
   void LogGraphStats();

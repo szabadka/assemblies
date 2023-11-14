@@ -75,11 +75,10 @@ std::vector<uint32_t> GenerateConnections(uint32_t support, float p,
 
 }  // namespace
 
-Brain::Brain(float p, float beta, uint32_t seed)
+Brain::Brain(float p, float beta, float max_weight, uint32_t seed)
     : rng_(seed), p_(p), beta_(beta), learn_rate_(1.0f + beta_),
-      max_weight_(std::pow(learn_rate_, kMaxWeightUpdates)),
-      areas_(1, Area(0, 0, 0)), fibers_(1, Fiber(0, 0)),
-      incoming_fibers_(1), outgoing_fibers_(1),
+      max_weight_(max_weight), areas_(1, Area(0, 0, 0)),
+      fibers_(1, Fiber(0, 0)), incoming_fibers_(1), outgoing_fibers_(1),
       area_name_(1, "INVALID") {}
 
 Area& Brain::AddArea(const std::string& name, uint32_t n, uint32_t k,
@@ -208,7 +207,7 @@ void Brain::ActivateArea(const std::string& name, uint32_t assembly_index) {
 
 void Brain::SimulateOneStep(bool update_plasticity) {
   if (log_level_ > 0) {
-    if (step_ == 0 && log_level_ > 1) {
+    if (step_ == 0 && log_level_ > 2) {
       LogGraphStats();
     }
     printf("Step %u%s\n", step_, update_plasticity ? "" : " (readout)");
@@ -301,7 +300,7 @@ void Brain::SimulateOneStep(bool update_plasticity) {
       std::swap(area.activated, new_activated[area_i]);
     }
   }
-  if (log_level_ > 1) {
+  if (log_level_ > 2) {
     LogGraphStats();
   }
   if (update_plasticity) {
@@ -530,6 +529,18 @@ void Brain::UpdatePlasticity(Area& to_area,
   }
 }
 
+void Brain::ReadAssembly(const std::string& name,
+                         size_t& index, size_t& overlap) {
+  const Area& area = GetArea(name);
+  const size_t num_assemblies = area.n / area.k;
+  std::vector<size_t> overlaps(num_assemblies);
+  for (auto neuron : area.activated) {
+    ++overlaps[neuron / area.k];
+  }
+  index = std::max_element(overlaps.begin(), overlaps.end()) - overlaps.begin();
+  overlap = overlaps[index];
+}
+
 void Brain::LogActivated(const std::string& area_name) {
   const Area& area = GetArea(area_name);
   printf("[%s] activated: ", area_name.c_str());
@@ -538,12 +549,12 @@ void Brain::LogActivated(const std::string& area_name) {
 }
 
 void Brain::LogGraphStats() {
-  printf("Graph Stats\n");
+  printf("Graph Stats after %u update steps\n", step_);
   for (const auto& area : areas_) {
     if (area.support == 0) continue;
     printf("Area %d [%s] has %d neurons\n",
            area.index, area_name_[area.index].c_str(), area.support);
-    if (log_level_ > 2) {
+    if (log_level_ > 3) {
       std::set<uint32_t> tmp(area.activated.begin(), area.activated.end());
       printf("   %s active:", area_name_[area.index].c_str());
       for (auto n : tmp) printf(" %u", n);

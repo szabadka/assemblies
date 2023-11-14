@@ -14,13 +14,14 @@ namespace nemo {
 struct LearnerParams {
   float p = 0.05;
   float beta = 0.06;
+  float max_weight = 1000.0;
   uint32_t phon_k = 100;
   uint32_t visual_k = 100;
   uint32_t motor_k = 100;
   uint32_t lex_n = 100000;
   uint32_t lex_k = 100;
-  uint32_t num_nouns = 2;
-  uint32_t num_verbs = 2;
+  uint32_t num_nouns = 10;
+  uint32_t num_verbs = 10;
   uint32_t context_areas = 0;
   uint32_t context_k = 20;
   uint32_t context_delay = 0;
@@ -39,24 +40,17 @@ class LearnerBrain : public Brain {
 
   bool ParseIndexedSentence(uint32_t noun_index, uint32_t verb_index);
 
-  // property P test
-  uint32_t TestWordProduction(uint32_t word, bool use_context = false,
-                              int log_level = 0);
-  bool TestAllProduction(bool use_context = false, bool verbose = false);
+  bool ParseRandomSentence();
 
-  // property Q test
-  bool TestWordAssembly(uint32_t word);
-  bool TestAllWordAssemblies(bool verbose);
-
-  // properties P and Q for all sentences
-  bool TestConvergence(bool use_context = false, bool verbose = false);
+  bool TestWord(uint32_t word, bool use_context, bool test_cross_input,
+                int log_level = 0);
+  bool TestAllWords(bool use_context, bool test_cross_input, int log_level = 0);
 
   void AnalyseInput(const std::string& from,
                     const std::string& to,
                     float& total_w,
                     size_t& num_synapses,
                     size_t& num_sat_weights) const;
-  void LogInput(const std::string& from, const std::string& to) const;
   void AnalyseAssemblies(const std::string& from,
                          const std::string& to,
                          size_t start, size_t end);

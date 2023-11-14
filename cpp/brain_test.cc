@@ -36,7 +36,7 @@ void Subsample(std::vector<uint32_t>& activated, float alpha, uint32_t seed) {
 
 Brain SetupOneStimulus(uint32_t n, uint32_t k, float p, float beta,
                        bool is_explicit = false) {
-  Brain brain(p, beta, 7777);
+  Brain brain(p, beta, 10000.0, 7777);
   brain.AddStimulus("StimA", k);
   brain.AddArea("A", n, k, /*recurrent=*/true, is_explicit);
   brain.AddFiber("StimA", "A");
@@ -46,7 +46,7 @@ Brain SetupOneStimulus(uint32_t n, uint32_t k, float p, float beta,
 
 Brain SetupTwoStimuli(uint32_t n, uint32_t k, float p, float beta,
                       bool is_explicit = false) {
-  Brain brain(p, beta, 7777);
+  Brain brain(p, beta, 10000.0, 7777);
   brain.AddStimulus("StimA", k);
   brain.AddStimulus("StimB", k);
   brain.AddArea("A", n, k, /*recurrent=*/true, is_explicit);
